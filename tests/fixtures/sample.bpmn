@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                   id="Definitions_1"
+                   targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <bpmn:process id="Process_LoanApproval" name="Loan Approval Process" isExecutable="false">
+
+    <bpmn:laneSet id="LaneSet_1">
+      <bpmn:lane id="Lane_Applicant" name="Applicant">
+        <bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Submit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ReviewOffer</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Approved</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_LoanOfficer" name="Loan Officer">
+        <bpmn:flowNodeRef>Gateway_CreditCheck</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_GenerateOffer</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_SendRejection</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Rejected</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <bpmn:startEvent id="StartEvent_1" name="Application Started">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_Submit" name="Submit Application">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="Gateway_CreditCheck" name="Credit Check">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approved</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Rejected</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="Task_GenerateOffer" name="Generate Offer">
+      <bpmn:incoming>Flow_Approved</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="Task_ReviewOffer" name="Review Offer">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="EndEvent_Approved" name="Loan Approved">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:serviceTask id="Task_SendRejection" name="Send Rejection">
+      <bpmn:incoming>Flow_Rejected</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Rejected" name="Loan Rejected">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:dataObject id="DataObject_ApplicationForm" name="Application Form"/>
+
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_Submit"/>
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Submit" targetRef="Gateway_CreditCheck"/>
+    <bpmn:sequenceFlow id="Flow_Approved" name="Approved" sourceRef="Gateway_CreditCheck" targetRef="Task_GenerateOffer"/>
+    <bpmn:sequenceFlow id="Flow_Rejected" name="Rejected" sourceRef="Gateway_CreditCheck" targetRef="Task_SendRejection"/>
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_GenerateOffer" targetRef="Task_ReviewOffer"/>
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_ReviewOffer" targetRef="EndEvent_Approved"/>
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_SendRejection" targetRef="EndEvent_Rejected"/>
+
+  </bpmn:process>
+
+</bpmn:definitions>

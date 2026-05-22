@@ -11,3 +11,14 @@ htmlcov/
 .benchmarks/
 *.egg
 .env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+secrets.yaml
+secrets.yml
+team-design/
+data/
