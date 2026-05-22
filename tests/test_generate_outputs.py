@@ -13,11 +13,7 @@ from agent_team_design.outputs import (
     get_declared_overlap,
 )
 from agent_team_design.roles import parse_role_spec
-from agent_team_design.trust import (
-    SCRUTINY_CONFIG,
-    derive_scrutiny_level,
-    derive_trust_level,
-)
+from agent_team_design.trust import derive_scrutiny_level, derive_trust_level
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "sample-roles"
