@@ -4,8 +4,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from agent_team_design.roles import parse_role_spec
-from agent_team_design.trust import SCRUTINY_CONFIG, derive_scrutiny_level, derive_trust_level
+from .roles import parse_role_spec
+from .trust import SCRUTINY_CONFIG, derive_scrutiny_level, derive_trust_level
 
 
 def generate_agent_stub(role_spec: dict[str, Any]) -> str:

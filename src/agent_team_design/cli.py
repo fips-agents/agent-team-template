@@ -4,8 +4,8 @@ import argparse
 import json
 import sys
 
-from agent_team_design.bpmn import parse_bpmn
-from agent_team_design.outputs import generate_outputs
+from .bpmn import parse_bpmn
+from .outputs import generate_outputs
 
 
 def cmd_parse_bpmn(args: argparse.Namespace) -> None:

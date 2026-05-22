@@ -2,10 +2,10 @@
 
 __version__ = "0.1.0"
 
-from agent_team_design.bpmn import parse_bpmn
-from agent_team_design.outputs import generate_outputs
-from agent_team_design.roles import parse_role_spec
-from agent_team_design.trust import derive_scrutiny_level, derive_trust_level
+from .bpmn import parse_bpmn
+from .outputs import generate_outputs
+from .roles import parse_role_spec
+from .trust import derive_scrutiny_level, derive_trust_level
 
 __all__ = [
     "parse_bpmn",
