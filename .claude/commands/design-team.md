@@ -188,12 +188,26 @@ description: One-line description of what this role does in the process
 justification: Why this role exists — what process gap it fills
 customer: Whose outcomes depend on this role doing its job well
 data_access:
-  - list of data sources this role needs
+  - source: data-source-name
+    sensitivity: public | internal | confidential | restricted
 actions:
   - list of actions this role can take
+action_scope: read-only | write | delete | external-calls
+reversibility: high | medium | low
+trust_level: high | medium | low
+scrutiny_level: high | medium | low
+budget:
+  max_cost_per_turn: dollar amount or omit if unconstrained
+  max_cost_per_session: dollar amount or omit if unconstrained
 removes_if_absent: What degrades or breaks if this role is removed
+overlaps_with:
+  - role: other-role-name
+    shared: what data or actions are shared
+    justification: why this overlap is intentional
 ---
 ```
+
+The `data_access` field pairs each data source with its sensitivity level — this drives trust assignment later. `action_scope` captures the broadest category of action the role takes (a role that mostly reads but occasionally deletes is `delete`). `reversibility` and `trust_level`/`scrutiny_level` are filled in during trust profiling (Step 5b); leave them blank during initial role derivation. `overlaps_with` captures intentional overlaps identified during the challenge phase — if two roles share data or actions, document it here rather than in a separate file.
 
 Below the frontmatter, write a paragraph or two describing the role's responsibilities, boundaries, and how it interacts with other roles. Keep it concrete and grounded in the process.
 
@@ -201,13 +215,69 @@ Include boundary statements — what the role explicitly does NOT do. "The intak
 
 Describe the role's upstream and downstream relationships. Who provides input to this role? What form does the input take? Who receives this role's output? What does the output look like? These are the contracts between roles, and they need to be explicit enough that someone could implement them without ambiguity.
 
-If roles have overlapping concerns, create `team-design/[name]/overlap-analysis.md` documenting which roles overlap, why, and whether the overlap is intentional (with justification) or a design smell that needs resolution.
-
 **The removal test.** Before finalizing any role, apply the removal test explicitly. State what happens if the role is removed: "If we remove the intake coordinator, applications arrive at credit analysis in varying states of completeness. Analysts spend time chasing documents instead of evaluating risk, and some applications get evaluated with missing information, leading to worse decisions." If you can't articulate a concrete degradation, the role may not be load-bearing. Merge it into another role or drop it.
 
 **Role count sanity check.** Most well-designed agent teams have 3-7 roles. Fewer than 3 usually means the process isn't complex enough to need a team — a single agent with good prompting might suffice. Consider saying so explicitly: "Based on the process analysis, this might not need a team. A single agent with clear instructions could handle this. Do you want to explore that option, or is there complexity I'm not seeing?" More than 7 usually means roles are too granular and coordination overhead will dominate. If the design is heading toward 8+ roles, pause and ask whether some can be merged without violating process constraints. There are legitimate exceptions (complex regulatory processes, large-scale operations), but they should be justified explicitly.
 
-**Human-in-the-loop awareness.** During role derivation, actively note which roles might need human oversight at runtime. Don't design the oversight mechanism (that's the trust profile phase), but flag the candidates: "This approval authority role makes high-stakes irreversible decisions — it's likely to need human-in-the-loop at least initially." Capture these observations in the role files so they're available when trust profiles are designed later.
+**Human-in-the-loop awareness.** During role derivation, actively note which roles might need human oversight at runtime. Don't design the oversight mechanism (that's the trust profile step below), but flag the candidates: "This approval authority role makes high-stakes irreversible decisions — it's likely to need human-in-the-loop at least initially." Capture these observations in the role files so they're available for trust profiling.
+
+
+### Step 5b: Trust and Scrutiny Profile Assignment
+
+Once the roles are proposed, challenged, and reasonably stable, assign each role a trust and scrutiny profile. This step translates the organizational design into concrete runtime configuration guidance.
+
+**When to do this.** Trust profiling belongs in the "stabilizing" phase — roles are mostly agreed upon, boundaries are clear, and the removal test has been applied. If roles are still being actively debated or merged, defer: "The roles are still evolving — let's finalize the role set first and assign trust profiles next session." Profiling unstable roles wastes effort and creates false precision. If the developer is exploring and the session has been mostly about discovering constraints or debating role boundaries, don't force trust profiling into the same session. It's better done with fresh eyes once the role set has settled.
+
+**Walk through each role conversationally.** Present roles one or two at a time, propose a profile, explain the reasoning, and ask the developer if it matches their intuition. Don't present a table of all roles at once. Start with the easiest-to-profile role (usually the one with the most obvious trust level), then work toward the nuanced ones. This builds shared vocabulary — by the time you reach the ambiguous roles, the developer understands the framework well enough to have informed opinions.
+
+For each role, assess four dimensions:
+
+**Reversibility.** Can this role's actions be undone? This is the single most important dimension because it determines how much damage a mistake can do before anyone notices.
+
+High reversibility means read-only operations or producing recommendations that others act on — a credit analyst writing a risk assessment hasn't committed the organization to anything yet. Medium reversibility means writes that can be corrected, like updating an application status or adding a note. Low reversibility means deletions, external API calls, sending notifications to customers, or making financial commitments. A role that triggers a wire transfer or sends a denial letter has done something that can't be cleanly unwound.
+
+Be specific about what "undo" means in context. Some actions look reversible but aren't — you can technically unsend an email, but the recipient already saw it. A status update is reversible in the database, but if downstream roles already acted on it, the reversal creates cascading rework.
+
+Present this concretely: "The intake coordinator reads application data and writes routing decisions. If a routing decision is wrong, the application gets re-routed — annoying but fixable. That's medium reversibility."
+
+**Impact.** What's the blast radius of a mistake by this role? High impact means financial loss, compliance violation, data corruption, or customer harm. Medium impact means wasted effort, delayed process, or rework. Low impact means minor inconvenience easily caught by downstream roles.
+
+Impact is about the downstream consequences, not the role's authority level. A data enrichment role with low authority but access to a production database could have high impact if it corrupts records. When assessing impact, ask the developer specifically: "If this role makes a mistake, who notices and when? How expensive is the fix?" The answers often surprise both parties.
+
+**Scrutiny derivation.** Scrutiny follows from reversibility and impact together:
+
+- Low reversibility + high impact: high scrutiny. The approval authority making final lending decisions, the compliance reviewer certifying regulatory adherence. Actions are hard to undo and mistakes are expensive.
+- Low reversibility + low impact: medium scrutiny. A notification sender — external calls can't be retracted, but a duplicate notification is an annoyance, not a catastrophe.
+- High reversibility + high impact: medium scrutiny. Unusual but possible — a role that produces analysis feeding into high-stakes decisions. The analysis itself is harmless, but bad analysis leads to bad decisions downstream.
+- High reversibility + low impact: low scrutiny. The intake coordinator checking document completeness. Mistakes get caught at the next stage and are cheap to fix.
+
+Present this as reasoning, not as a lookup table: "The credit analyst has medium reversibility — their assessments can be revised — but high impact, because a bad assessment directly leads to a bad lending decision. That puts them at medium-to-high scrutiny."
+
+Note that scrutiny is about oversight intensity, not about the role's importance. A low-scrutiny role isn't less important — it's less dangerous when it makes mistakes. The intake coordinator is essential to the team's efficiency, but its errors are cheap to correct. The approval authority's errors are expensive, so it gets more oversight.
+
+**Trust level.** Trust is a function of data sensitivity and action scope. Roles accessing restricted or confidential data get lower trust — not because they're less reliable, but because the consequences of a data handling mistake are severe. Roles making external API calls get lower trust because external calls can't be sandboxed or rolled back. Roles with read-only access to internal data get higher trust because their failure modes are contained.
+
+Walk the developer through the logic: "The credit analyst accesses confidential financial data and makes external calls to credit bureaus. That combination — sensitive data plus external calls — puts them at low trust, meaning tight permission scoping. The intake coordinator reads internal application data and writes routing decisions — internal data, no external calls, so medium-to-high trust."
+
+**Budget.** Some roles are expensive to run — roles that make external API calls (credit bureau lookups, document verification services) or that use large-context models for complex analysis. Ask the developer: "Are there cost constraints on any of these roles? For example, does each credit bureau lookup cost money, and should we limit how many the credit analyst can make per application?" Budget limits in the role spec translate to cost guards in the agent configuration. Not every role needs a budget — intake coordinators doing simple checks don't warrant cost tracking. But roles making external calls or using expensive models should have explicit limits even if generous.
+
+**Runtime configuration mapping.** After assigning trust and scrutiny, translate them into concrete fips-agents terms so the developer sees what the profiles mean in practice:
+
+- High scrutiny: `trace.fidelity: full`, granular permission rules, question tool enabled for human checkpoints. Every action is logged in full fidelity, permissions are tightly scoped, and the role can ask for human input when uncertain. "This is appropriate for the approval authority because their decisions are hard to reverse and financially significant."
+- Medium scrutiny: `trace.fidelity: standard`, moderate permission rules. Actions are logged at standard detail, permissions are scoped but not restrictive. "The credit analyst gets standard tracing — we want visibility into their analysis process, but they're producing recommendations, not final decisions."
+- Low scrutiny: `trace.fidelity: minimal`, broad allow rules. Lightweight logging, permissive access within the role's domain. "The intake coordinator is checking document completeness — if they make a mistake, the credit analyst catches it. Minimal tracing keeps overhead low."
+
+Don't present the runtime mapping as abstract configuration — connect it to the developer's process: "High scrutiny for the approval authority means that when it's uncertain about a borderline application, it can pause and ask a human rather than guessing. That's the question tool in practice."
+
+**Developer validation.** After presenting each role's profile, ask explicitly: "Does this match your intuition? You may have context I'm missing — maybe a role that looks low-impact actually feeds into a regulatory filing, or a role I flagged as high-scrutiny is actually well-contained." The developer's domain knowledge can change any assessment. A compliance reviewer that looks medium-impact becomes high-impact if regulatory fines are on the line. Adjust and re-explain when the developer pushes back.
+
+**Team-level coherence.** After profiling individual roles, step back and look at the team as a whole. If every role ended up at high scrutiny, something is off — either the process is genuinely high-stakes at every step (possible in regulated domains), or the assessments are too conservative. Conversely, if everything is low scrutiny, ask whether the process actually warrants an agent team or whether a simpler automation would suffice. A well-designed team typically has a gradient: high scrutiny at decision and commitment points, low scrutiny at intake and enrichment points, with medium scrutiny filling the analytical middle.
+
+Also check that trust boundaries align with data flow. If a high-trust role receives output from a low-trust role, the high-trust role is implicitly trusting unscrutinized data. That's not necessarily wrong — the intake coordinator (high trust, low scrutiny) feeding the credit analyst (low trust, medium scrutiny) is fine because the analyst validates the data independently. But a high-trust role consuming low-trust output without validation is a design smell worth flagging.
+
+**Profiles can change.** Trust profiles are design-time assessments, not permanent labels. If the developer later discovers that a role's impact is higher than expected (maybe the intake coordinator's routing decisions affect SLA compliance, not just convenience), revisit the profile. The generated stubs will need updating too, but that's straightforward — the important thing is that the reasoning is captured in the role files.
+
+Once all roles are profiled, update each role file's frontmatter with the assigned `reversibility`, `trust_level`, and `scrutiny_level` values. These values feed into the output generation step.
 
 
 ### Step 6: Capture Artifacts
@@ -217,8 +287,9 @@ Throughout the session, create and update files in `team-design/[name]/`. Use ba
 ```
 team-design/
   [name]/
-    README.md
+    team-manifest.md
     process-model.md
+    compatibility-matrix.md
     conversation-YYYYMMDD-HHMMSS.md
     next-steps.md
     constraints/
@@ -228,22 +299,33 @@ team-design/
       examples/
     roles/
       [role-name].md
-    overlap-analysis.md (if relevant)
+    stubs/
+      [role-name].agent.yaml
 ```
 
-**README.md** should give someone new a clear picture of the team design: what domain it covers, what stage the design is at, how many roles have been identified, and what's still open. Update it every session.
+**team-manifest.md** is the structured team summary — generated from the role files, it gives someone new a clear picture of the team design: what domain it covers, what stage the design is at, how many roles exist with their trust/scrutiny profiles, and what's still open. Think of it as the elevator pitch for the team design.
+
+**compatibility-matrix.md** is a role-pair comparison table — generated alongside the manifest, it shows which roles share data, which have overlapping actions, and where intentional overlaps exist with their justifications.
 
 **conversation-YYYYMMDD-HHMMSS.md** captures the key points from this session — decisions made, questions raised, roles proposed or revised, constraints discovered. This is the audit trail of the design process.
 
 **next-steps.md** lists concrete open questions and things to explore in future sessions. Frame them as questions, not tasks: "Should the compliance reviewer have access to the applicant's full history, or only the current application?" "Is there a hard regulatory requirement for separation between evaluation and approval, or is it just organizational preference?"
 
-For the directory structure, use a shell script to create directories. Check for existing directories first so the script is idempotent.
+**stubs/[role-name].agent.yaml** — one per role, pre-filled from the role spec and trust profiles. These are starting configurations, not final agent definitions. The developer customizes them during implementation.
 
-When writing the README.md, structure it so someone encountering this team design for the first time can understand it in under two minutes: what domain, what process, how many roles, what stage the design is at, and what's still open. Think of it as the elevator pitch for the team design.
+For the directory structure, use a shell script to create directories. Check for existing directories first so the script is idempotent.
 
 When writing role files, favor specificity over comprehensiveness. "Reviews denial decisions against the five criteria in lending policy section 4.2" is better than "ensures compliance with all applicable regulations." The more specific the role description, the easier it is to implement and the easier it is to test whether the implementation is correct.
 
 When writing next-steps.md, limit it to 5-8 questions. More than that and nothing feels urgent. Fewer than that and the developer might think the design is more complete than it is. Order them by importance — what would most change the design if the answer went one way vs. the other?
+
+**Output generation.** When the design reaches "stabilizing" or "ready" phase and trust profiles have been assigned, generate the structured output artifacts:
+
+```bash
+python3 .claude/commands/scripts/generate_outputs.py team-design/[name]
+```
+
+This produces the `stubs/` directory with agent.yaml files, the `compatibility-matrix.md`, and the `team-manifest.md`. After running the generator, review the output with the developer — walk through each stub and the compatibility matrix, confirming that the generated configuration reflects the design intent. The stubs are starting points, not final configs; the developer will customize them when they begin implementation with fips-agents.
 
 
 ### Step 7: Session Wrap
@@ -254,7 +336,7 @@ First, list what was created or updated — file paths and a one-line descriptio
 
 Third, offer to continue or encourage stepping away. Good team design benefits from incubation — sometimes the developer needs to talk to domain experts, review actual process documents, or just let ideas settle. Don't rush to closure.
 
-When the developer is ready for next steps beyond the current design session, mention what's coming: running `/design-team` again to continue iterating on roles, and (in future releases) trust profile assignment and agent.yaml generation from the role specs.
+When the developer is ready for next steps beyond the current design session, mention what's coming: running `/design-team` again to continue iterating on roles, assigning trust profiles if not yet done, and generating output artifacts. When the design reaches "ready" phase with trust profiles assigned, the generated stubs in `stubs/` are the bridge to implementation — the developer takes those agent.yaml files and uses them as the starting configuration for their fips-agents project.
 
 Encourage the developer to share the role specs with domain experts or stakeholders before the next session. The role files are written in plain language with YAML frontmatter — they're designed to be readable by someone who isn't technical. A domain expert reviewing the role specs will catch things the developer missed: "Actually, the compliance reviewer also needs to check approvals, not just denials" or "There's a whole exception-handling path you haven't accounted for."
 
@@ -271,7 +353,7 @@ Each session follows this pattern:
 6. Create a new `conversation-YYYYMMDD-HHMMSS.md` for this session
 7. Pick up where things left off — don't re-ask questions that have been answered
 
-The design should evolve across sessions. Early sessions focus on constraint ingestion and process understanding. Middle sessions focus on role derivation and challenge. Later sessions refine boundaries, resolve overlaps, and prepare for the next phase (trust profiles).
+The design should evolve across sessions. Early sessions focus on constraint ingestion and process understanding. Middle sessions focus on role derivation and challenge. Later sessions refine boundaries, resolve overlaps, assign trust profiles, and generate output artifacts.
 
 When revisiting roles across sessions, look for design drift. Sometimes a developer returns with new information that invalidates a previous role or changes a boundary. That's healthy — flag it explicitly: "Last time we separated intake and screening into two roles, but the new policy document suggests they're really one function. Should we merge them?" Don't silently accumulate contradictions.
 
@@ -281,8 +363,8 @@ Track the maturity of the design across sessions. A useful mental model:
 
 - **Exploring**: Still discovering the process, no roles proposed yet. Focus on constraint ingestion and process understanding.
 - **Drafting**: Initial roles proposed but not validated. Focus on challenge, refinement, and overlap analysis.
-- **Stabilizing**: Roles are mostly agreed upon, boundaries are being refined. Focus on edge cases, exception paths, and preparing for trust profiles.
-- **Ready**: Role design is stable enough to move to the next phase. All roles pass the removal test, overlaps are justified, and the developer feels confident the design reflects the real process.
+- **Stabilizing**: Roles are mostly agreed upon, boundaries are being refined. Focus on edge cases, exception paths, and trust profile assignment (Step 5b).
+- **Ready**: Trust profiles assigned, output artifacts generated. All roles pass the removal test, overlaps are justified, and the generated stubs are ready for implementation.
 
 Mention the current stage in the README.md and at the start of each session so the developer knows where things stand.
 
@@ -359,17 +441,37 @@ That said, if your regulatory environment doesn't require that separation, mergi
 
 **Assistant**: Good. I'll note that the separation is mandated by organizational policy and regulatory expectations, not just a design preference.
 
-*[Session continues with refinement, then wraps up]*
+*[Session continues with refinement. Once roles are stable, the dialog moves to trust profiling.]*
+
+**Assistant**: The four roles feel solid — they all pass the removal test and the boundaries are clear. Let's assign trust and scrutiny profiles so we can generate the initial configuration stubs.
+
+Starting with the intake coordinator. This role reads application data and writes routing decisions — internal data, no external calls. If it routes an application incorrectly, the credit analyst catches it at the next stage. So: medium reversibility (writes that can be corrected), low impact (mistakes are caught downstream). That combination gives it low scrutiny — minimal tracing, broad permissions within its domain. Trust level is high since it only touches internal data with no external calls. Does that match your sense of it?
+
+**Developer**: Yeah, that tracks. It's basically a traffic cop — if it messes up, the analyst just sends the application back.
+
+**Assistant**: Exactly. Now the approval authority is the opposite end of the spectrum. It makes final approve/deny decisions that commit the organization financially. Low reversibility — once a loan is approved and funded, unwinding that is painful. High impact — bad approvals mean financial loss, bad denials mean lost business and regulatory scrutiny. That puts it at high scrutiny: full trace fidelity, granular permissions, and the question tool enabled so it can escalate to a human when uncertain. Trust level is low because it accesses confidential financial data and its decisions trigger external commitments. In fips-agents terms, that means every action is logged, permissions are tightly scoped, and it has an explicit path to ask for human input.
+
+**Developer**: That makes sense. The credit analyst is somewhere in between?
+
+**Assistant**: Right. The credit analyst accesses confidential financial data and makes external calls to credit bureaus — that's low trust. But their output is a recommendation, not a final decision. Medium reversibility (assessments can be revised), high impact (bad analysis leads to bad lending decisions). That lands at medium-to-high scrutiny: standard trace fidelity, moderate permissions, but tighter scoping on the external API calls. I'd put the compliance reviewer at medium scrutiny for similar reasons — they access confidential data but produce review assessments, not final actions.
+
+Let me update the role files with these profiles and generate the output artifacts.
+
+*[Runs generate_outputs.py, then wraps up]*
 
 Here's what we produced this session:
 
-- `team-design/loan-processing/README.md` — Design overview
+- `team-design/loan-processing/team-manifest.md` — Structured team summary with trust profiles
 - `team-design/loan-processing/process-model.md` — Synthesized process with six stages, three decision points, and key constraints
+- `team-design/loan-processing/compatibility-matrix.md` — Role-pair comparison table
 - `team-design/loan-processing/roles/intake-coordinator.md`
 - `team-design/loan-processing/roles/credit-analyst.md`
 - `team-design/loan-processing/roles/compliance-reviewer.md`
 - `team-design/loan-processing/roles/approval-authority.md`
-- `team-design/loan-processing/overlap-analysis.md` — Documents the intentional separation between credit analyst and approval authority
+- `team-design/loan-processing/stubs/intake-coordinator.agent.yaml`
+- `team-design/loan-processing/stubs/credit-analyst.agent.yaml`
+- `team-design/loan-processing/stubs/compliance-reviewer.agent.yaml`
+- `team-design/loan-processing/stubs/approval-authority.agent.yaml`
 - `team-design/loan-processing/conversation-20260522-140322.md` — This session's notes
 - `team-design/loan-processing/next-steps.md` — Open questions
 
@@ -377,13 +479,13 @@ Some things to think about before next session:
 
 - The fast-track path for existing customers: should the intake coordinator have access to the full customer history, or just a flag indicating relationship status?
 - How should the $250K threshold for second review work? Is the second reviewer a separate role instance or a different role entirely?
-- Where do human-in-the-loop checkpoints belong? Which decisions should always involve a human, and which can the agent team handle autonomously?
+- Review the generated stubs in `stubs/` — do the permission scopes and trace settings feel right for your environment?
 
 Want to keep going, or take some time to think about these?
 
-**Developer**: I'll think about it. Especially the human-in-the-loop question — I need to talk to our risk team about that.
+**Developer**: I'll think about it. Especially the permission scoping — I need to talk to our risk team about that.
 
-**Assistant**: That's a great instinct. The risk team will have strong opinions about which decisions need human oversight, and those opinions should directly shape the role boundaries. Bring back whatever they say and we'll incorporate it next time.
+**Assistant**: That's a great instinct. The risk team will have strong opinions about which decisions need human oversight, and those opinions might adjust the scrutiny levels we just assigned. Bring back whatever they say and we'll incorporate it next time. The stubs in `stubs/` are your bridge to implementation — once you're satisfied with the profiles, those agent.yaml files are the starting configuration for your fips-agents project.
 
 When you're ready, just run `/design-team loan-processing` and we'll pick up where we left off.
 
@@ -413,7 +515,7 @@ During the dialog, watch for these design smells and gently redirect:
 
 **The pipeline fallacy.** Every role feeds exactly one downstream role in a linear chain. Real processes have branches, loops, escalation paths, and exception handling. If the design looks like a simple pipeline, probe for the messy cases: "What happens when something goes wrong at this stage? Where does it go?"
 
-**Premature trust design.** The developer wants to define permissions and access controls before the roles are stable. Redirect to role derivation first. Trust profiles are a future step and they're much easier to assign once roles are well-defined. "Let's make sure we have the right roles first — trust profiles build on that foundation."
+**Premature trust design.** The developer wants to define permissions and access controls before the roles are stable. Redirect to role derivation first. Trust profiles are assigned in Step 5b and they're much easier to get right once roles are well-defined. "Let's make sure we have the right roles first — trust profiles build on that foundation."
 
 **The golden path fallacy.** The developer only describes the happy path — everything goes smoothly, no exceptions. Real processes are mostly exception handling. Push hard on error cases: "What happens when the application is incomplete? What about fraud? What about edge cases that don't fit any category?" Exception paths often reveal roles that the happy path hides, like an escalation coordinator or exception reviewer.
 
