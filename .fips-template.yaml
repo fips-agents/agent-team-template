@@ -1,0 +1,31 @@
+schema_version: 1
+patch:
+  categories:
+    docs:
+      description: "Documentation and governance files"
+      patterns:
+        - "CLAUDE.md"
+        - "docs/**/*"
+        - "LICENSE"
+        - "SECURITY.md"
+        - ".github/CODEOWNERS"
+      ask_before_patch: false
+    build:
+      description: "Tooling and security configuration"
+      patterns:
+        - ".gitignore"
+        - ".gitleaks.toml"
+      ask_before_patch: false
+    claude:
+      description: "Claude Code slash commands and scripts"
+      patterns:
+        - ".claude/commands/**/*"
+      ask_before_patch: false
+  never_patch:
+    - "src/**/*"
+    - "tests/**/*"
+    - ".env*"
+    - "README.md"
+    - "pyproject.toml"
+    - "planning/**/*"
+    - "retrospectives/**/*"
